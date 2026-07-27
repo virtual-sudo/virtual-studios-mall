@@ -1,0 +1,230 @@
+/* ===================================================================
+   MALL UNIT INFO POPUP — Glassmorphism, dark glass, responsive
+   Target: 3DVista "Execute JS"  (paste this exact block, no <script> tags)
+
+   v2 fixes:
+   - No innerHTML anywhere (all nodes built via createElement/textContent)
+     to avoid 3DVista's Execute JS preprocessor misreading embedded HTML
+     strings as literal markup.
+   - No special/typographic characters (em dash, middle dot, entities) in
+     string literals, only plain ASCII, for the same reason the "$" sign
+     needed the fromCharCode workaround elsewhere in this tour.
+   - Console diagnostics on load and on call, so failures are visible
+     instead of silent.
+
+   Usage:
+     window.showMallInfoPopup();                  // default placeholder
+     window.showMallInfoPopup({ title: "..." });   // override any field
+     window.closeMallInfoPopup();                  // close programmatically
+   =================================================================== */
+(function () {
+  'use strict';
+
+  try {
+
+    var STYLE_ID   = 'mip-styles';
+    var FONT_ID    = 'mip-font-inter';
+    var OVERLAY_ID = 'mip-overlay';
+
+    /* ---------- default placeholder content (override per hotspot) ---------- */
+    var DEFAULT_DATA = {
+      eyebrow: 'AVAILABLE SPACE',
+      title: 'UNIT 204',
+      subtitle: 'Level 2 - North Wing',
+      description:
+        'This space is currently an unfinished shell, a blank canvas ready to be ' +
+        'fitted out to suit your brand. From a boutique retail concept to a full ' +
+        'dining experience, the layout and utilities are designed to flex around ' +
+        'your vision.',
+      concepts: ['Retail Boutique', 'Cafe and Dining', 'Flagship Showroom', 'Pop-Up Experience'],
+      specs: [
+        { label: 'Floor Area', value: 'TBD sqm' },
+        { label: 'Frontage', value: 'TBD m' },
+        { label: 'Ceiling Height', value: 'TBD m' },
+        { label: 'Foot Traffic Zone', value: 'High' }
+      ],
+      ctaLabel: 'Inquire About This Space',
+      onCta: null
+    };
+
+    /* ---------------------------- fonts & styles ---------------------------- */
+    function injectFonts() {
+      if (document.getElementById(FONT_ID)) return;
+      var link = document.createElement('link');
+      link.id = FONT_ID;
+      link.rel = 'stylesheet';
+      link.href =
+        'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cinzel:wght@500;600;700&display=swap';
+      document.head.appendChild(link);
+    }
+
+    function injectStyles() {
+      if (document.getElementById(STYLE_ID)) return;
+      var rules = [];
+
+      rules.push('#' + OVERLAY_ID + '{position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:4vw;background:rgba(0,0,0,0);backdrop-filter:blur(0px);-webkit-backdrop-filter:blur(0px);opacity:0;transition:background .35s ease, backdrop-filter .35s ease, opacity .35s ease;font-family:Inter,Arial,sans-serif;}');
+      rules.push('#' + OVERLAY_ID + '.mip-visible{background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:1;}');
+
+      rules.push('.mip-panel{position:relative;width:min(560px, 92vw);max-height:85vh;overflow-y:auto;background:rgba(12,12,13,0.68);border:1px solid rgba(255,255,255,0.14);border-radius:clamp(14px, 2vw, 22px);box-shadow:0 20px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);backdrop-filter:blur(26px) saturate(150%);-webkit-backdrop-filter:blur(26px) saturate(150%);padding:clamp(22px, 4vw, 40px);color:#F2F1EE;transform:scale(0.94) translateY(10px);opacity:0;transition:transform .38s cubic-bezier(.2,.8,.2,1), opacity .38s ease;}');
+      rules.push('#' + OVERLAY_ID + '.mip-visible .mip-panel{transform:scale(1) translateY(0);opacity:1;}');
+
+      rules.push('.mip-panel::-webkit-scrollbar{width:6px;}');
+      rules.push('.mip-panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.18);border-radius:6px;}');
+
+      rules.push('.mip-close{position:absolute;top:clamp(12px,2vw,18px);right:clamp(12px,2vw,18px);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#EDEBE6;cursor:pointer;font-size:15px;font-weight:600;line-height:1;transition:background .2s ease, transform .2s ease;user-select:none;}');
+      rules.push('.mip-close:hover{background:rgba(255,255,255,0.14);transform:rotate(90deg);}');
+
+      rules.push('.mip-eyebrow{font-family:Inter,Arial,sans-serif;font-weight:600;letter-spacing:.14em;font-size:clamp(10px,1.1vw,12px);text-transform:uppercase;color:rgba(242,241,238,0.55);margin:0 0 10px;}');
+
+      rules.push('.mip-title{font-family:"Trajan Pro","Cinzel",Georgia,serif;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:clamp(22px,4vw,32px);line-height:1.15;margin:0 0 6px;color:#FFFFFF;}');
+
+      rules.push('.mip-subtitle{font-family:Inter,Arial,sans-serif;font-weight:500;font-size:clamp(12.5px,1.5vw,14.5px);color:rgba(242,241,238,0.6);margin:0 0 clamp(16px,2.5vw,22px);}');
+
+      rules.push('.mip-desc{font-family:Inter,Arial,sans-serif;font-weight:400;font-size:clamp(13.5px,1.6vw,15px);line-height:1.65;color:rgba(242,241,238,0.85);margin:0 0 clamp(18px,2.5vw,24px);}');
+
+      rules.push('.mip-section-label{font-family:Inter,Arial,sans-serif;font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:rgba(242,241,238,0.5);margin:0 0 10px;}');
+
+      rules.push('.mip-concepts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 clamp(18px,2.5vw,24px);}');
+      rules.push('.mip-chip{font-family:Inter,Arial,sans-serif;font-size:12.5px;font-weight:500;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#F2F1EE;white-space:nowrap;}');
+
+      rules.push('.mip-specs{display:grid;grid-template-columns:repeat(auto-fit, minmax(120px,1fr));gap:1px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden;margin:0 0 clamp(20px,3vw,28px);}');
+      rules.push('.mip-spec{background:rgba(255,255,255,0.04);padding:12px 14px;}');
+      rules.push('.mip-spec-label{font-family:Inter,Arial,sans-serif;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:rgba(242,241,238,0.5);margin:0 0 4px;}');
+      rules.push('.mip-spec-value{font-family:Inter,Arial,sans-serif;font-size:14px;font-weight:600;color:#FFFFFF;}');
+
+      rules.push('.mip-cta{display:inline-flex;align-items:center;justify-content:center;width:100%;padding:13px 20px;border-radius:10px;cursor:pointer;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:13.5px;letter-spacing:.03em;color:#0C0C0D;background:#F2F1EE;border:1px solid #F2F1EE;transition:transform .18s ease, opacity .18s ease;user-select:none;}');
+      rules.push('.mip-cta:hover{transform:translateY(-1px);opacity:.92;}');
+      rules.push('.mip-cta:active{transform:translateY(0);}');
+
+      rules.push('@media (max-width:480px){.mip-panel{padding:20px;border-radius:16px;} .mip-specs{grid-template-columns:repeat(2,1fr);}}');
+
+      var style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.type = 'text/css';
+      style.appendChild(document.createTextNode(rules.join(' ')));
+      document.head.appendChild(style);
+    }
+
+    /* -------------------------------- element helper -------------------------------- */
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = text;
+      return node;
+    }
+
+    /* -------------------------------- build -------------------------------- */
+    function buildPanel(data) {
+      var panel = el('div', 'mip-panel');
+
+      var closeBtn = el('div', 'mip-close', 'X');
+      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.addEventListener('click', closePopup);
+      panel.appendChild(closeBtn);
+
+      panel.appendChild(el('p', 'mip-eyebrow', data.eyebrow));
+      panel.appendChild(el('h2', 'mip-title', data.title));
+      panel.appendChild(el('p', 'mip-subtitle', data.subtitle));
+      panel.appendChild(el('p', 'mip-desc', data.description));
+
+      if (data.concepts && data.concepts.length) {
+        panel.appendChild(el('p', 'mip-section-label', 'Concept Possibilities'));
+        var concepts = el('div', 'mip-concepts');
+        for (var i = 0; i < data.concepts.length; i++) {
+          concepts.appendChild(el('span', 'mip-chip', data.concepts[i]));
+        }
+        panel.appendChild(concepts);
+      }
+
+      if (data.specs && data.specs.length) {
+        var specs = el('div', 'mip-specs');
+        for (var j = 0; j < data.specs.length; j++) {
+          var cell = el('div', 'mip-spec');
+          cell.appendChild(el('div', 'mip-spec-label', data.specs[j].label));
+          cell.appendChild(el('div', 'mip-spec-value', data.specs[j].value));
+          specs.appendChild(cell);
+        }
+        panel.appendChild(specs);
+      }
+
+      var cta = el('div', 'mip-cta', data.ctaLabel);
+      cta.addEventListener('click', function () {
+        if (typeof data.onCta === 'function') {
+          data.onCta();
+        } else {
+          closePopup();
+        }
+      });
+      panel.appendChild(cta);
+
+      panel.addEventListener('click', function (e) { e.stopPropagation(); });
+
+      return panel;
+    }
+
+    function onKeydown(e) {
+      if (e.key === 'Escape' || e.keyCode === 27) closePopup();
+    }
+
+    /* -------------------------------- open/close -------------------------------- */
+    function closePopup() {
+      var overlay = document.getElementById(OVERLAY_ID);
+      if (!overlay) return;
+      overlay.classList.remove('mip-visible');
+      document.removeEventListener('keydown', onKeydown);
+      setTimeout(function () {
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }, 380);
+    }
+
+    function openPopup(customData) {
+      try {
+        console.log('[MallInfoPopup] showMallInfoPopup called');
+        injectFonts();
+        injectStyles();
+
+        var existing = document.getElementById(OVERLAY_ID);
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+        var data = {};
+        for (var k in DEFAULT_DATA) { data[k] = DEFAULT_DATA[k]; }
+        if (customData) {
+          for (var k2 in customData) { data[k2] = customData[k2]; }
+        }
+
+        var overlay = el('div', '');
+        overlay.id = OVERLAY_ID;
+        overlay.addEventListener('click', closePopup);
+
+        var panel = buildPanel(data);
+        overlay.appendChild(panel);
+
+        if (!document.body) {
+          console.warn('[MallInfoPopup] document.body not ready yet');
+          return;
+        }
+        document.body.appendChild(overlay);
+
+        document.addEventListener('keydown', onKeydown);
+
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            overlay.classList.add('mip-visible');
+          });
+        });
+      } catch (innerErr) {
+        console.error('[MallInfoPopup] error while opening popup:', innerErr);
+      }
+    }
+
+    /* -------------------------------- global entry points -------------------------------- */
+    window.showMallInfoPopup = openPopup;
+    window.closeMallInfoPopup = closePopup;
+
+    console.log('[MallInfoPopup] script registered successfully. Call window.showMallInfoPopup() to test.');
+
+  } catch (outerErr) {
+    console.error('[MallInfoPopup] failed to register:', outerErr);
+  }
+
+})();
